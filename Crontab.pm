@@ -3,7 +3,7 @@
 ## 
 ## Scott Wiersdorf
 ## Created: Fri May  9 14:03:01 MDT 2003
-## $SMEId: local/perl/Config/Crontab/Crontab.pm,v 1.29 2003/07/11 20:53:07 scottw Exp $
+## $SMEId: local/perl/Config/Crontab/Crontab.pm,v 1.30 2003/09/11 15:22:04 scottw Exp $
 ## 
 ## Config::Crontab - a crontab(5) parser
 ## 
@@ -35,7 +35,7 @@ use vars qw( $VERSION @ISA );
 use Fcntl;
 use File::Temp qw(:POSIX);
 
-$VERSION = '1.02';
+$VERSION = '1.03';
 
 sub init {
     my $self = shift;
@@ -549,7 +549,7 @@ uncomment all crontab events whose command contains the string 'fetchmail'
 remove the first crontab block that has '/bin/unwanted' as a command
 
   perl -MConfig::Crontab -e '$c=new Config::Crontab; $c->read; \
-  $c->delete($c->block($c->select(-command_re => "/bin/unwanted"))); \
+  $c->remove($c->block($c->select(-command_re => "/bin/unwanted"))); \
   $c->write'
 
 =item *
@@ -578,7 +578,7 @@ change all 'MAILTO' environment settings in this crontab to 'joe@schmoe.org':
 strip all comments from a crontab:
 
   perl -MConfig::Crontab -e '$c=new Config::Crontab; $c->read; \
-  $c->delete($c->select(-type => "comment")); $c->write'
+  $c->remove($c->select(-type => "comment")); $c->write'
 
 =item *
 
@@ -595,7 +595,7 @@ disable an entire block of commands (the block that has the word
 This section describes B<Config::Crontab> objects (hereafter simply
 B<Crontab> objects). A B<Crontab> object is an abstracted way of
 dealing with an entire B<crontab(5)> file. The B<Crontab> class has
-methods to allow you to select, add, or delete B<Block> objects as
+methods to allow you to select, add, or remove B<Block> objects as
 well as read and parse crontab files and write crontab files.
 
 =head2 init([%args])

@@ -1,4 +1,4 @@
-Config/Crontab version 1.01
+Config/Crontab version 1.03
 ===========================
 
 Config::Crontab reads and writes (and pretty-prints) your crontab(5)
@@ -11,7 +11,7 @@ newlines); the Block is the basic unit of a Config::Crontab object.
 
 You can re-order entire blocks within a crontab file, re-order lines
 within blocks (there are three types of lines: comments, environment
-settings, and crontab commands or events), delete blocks or lines
+settings, and crontab commands or events), remove blocks or lines
 within blocks, add new blocks or lines within blocks, etc. See the
 Config::Crontab manpage for full details.
 
