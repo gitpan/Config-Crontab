@@ -1,6 +1,6 @@
 use Test;
 use blib;
-BEGIN { plan tests => 45 };
+BEGIN { plan tests => 49 };
 use Config::Crontab;
 ok(1);
 
@@ -114,6 +114,32 @@ ok( $ct->file(".foo_" . $crontabf) );
 ok( $ct->write );
 undef $ct;
 
+## test a pipe with 'new'
+$ct = new Config::Crontab( -file => "cat $crontabf|" );
+$ct->read;
+ok( $ct->dump, $crontabd2 );
+undef $ct;
+
+## test a pipe with 'new'
+$ct = new Config::Crontab( -file => "perl -ne 'print' $crontabf|" );
+$ct->read;
+ok( $ct->dump, $crontabd2 );
+undef $ct;
+
+## test a pipe with 'file'
+$ct = new Config::Crontab;
+$ct->file("perl -ne 'print' $crontabf|");
+$ct->read;
+ok( $ct->dump, $crontabd2 );
+undef $ct;
+
+## test a pipe with 'file'
+$ct = new Config::Crontab;
+$ct->read( -file => "perl -ne 'print' $crontabf|" );
+ok( $ct->dump, $crontabd2 );
+undef $ct;
+
+## 
 ok( $ct = new Config::Crontab( -file => ".foo_" . $crontabf ) );
 ok( $ct->read );
 ok( $ct->dump, $crontabd3 );
@@ -182,7 +208,7 @@ open FILE, ">$crontabf"
 print FILE $crontabd5;
 close FILE;
 
-## squeeze
+## squeeze: FIXME: squeeze(0) doesn't work properly
 ok( $ct = new Config::Crontab( -file    => $crontabf,
 			       -squeeze => 0 ) );
 ok( $ct->squeeze(1) );  ## squeeze

@@ -1,6 +1,6 @@
 use Test;
 use blib;
-BEGIN { plan tests => 53 };
+BEGIN { plan tests => 61 };
 use Config::Crontab;
 ok(1);
 
@@ -84,6 +84,11 @@ ok( @lines = $ct->select( type   => 'event',
 			  dow_re => '5' ) );
 ok( scalar @lines, 4 );
 
+## negative regular expression match
+ok( @lines = $ct->select( type    => 'event',
+			  dow_nre => '5' ) );
+ok( scalar @lines, 3 );
+
 ## string exact match
 ok( @lines = $ct->select( type => 'event',
 			  dow  => '5' ) );
@@ -93,6 +98,11 @@ ok( scalar @lines, 2 );
 ok( @lines = $ct->select( type   => 'event',
 			  dow_re => '^5$' ) );
 ok( scalar @lines, 2 );
+
+## tight negative regular expression
+ok( @lines = $ct->select( type    => 'event',
+			  dow_nre => '^5$' ) );
+ok( scalar @lines, 5 );
 
 ## multiple fields
 ok( @lines = $ct->select( type   => 'event',
@@ -109,8 +119,10 @@ ok( @lines = $ct->select( type       => 'event',
 			  command_re => 'dateish' ) );
 ok( scalar @lines, 2 );
 
-
 ## try doing some selects where the field does not exist in the object
+ok( @lines = $ct->select( -type   => 'event',
+			  -foo_re => 'bar' ), 0 );
+ok( scalar @lines, 0 );
 
 ## test remove blocks
 $block = $ct->block($ct->select(type => 'comment', data_re => 'logs nightly'));
@@ -264,7 +276,7 @@ _DUMPED_
 undef $ct;
 
 
-## test block removal
+## test block removal using block select
 ok( $ct = new Config::Crontab );
 ok( $ct->read( -file => $crontabf ) );
 ok( $ct->dump, $crontabd );
@@ -273,6 +285,28 @@ for my $blk ( $ct->blocks ) {
     $blk->remove($blk->select( -type   => 'event',
 			       -active => 0, ));
 }
+ok( $ct->dump, <<'_CRONTAB_' );
+MAILTO=scott
+
+20 2 * * 5 /usr/bin/tar -zcvf .backup/`$HOME/bin/dateish`.tar.gz ~/per
+40 2 * * 5 /usr/bin/scp $HOME/.backup/`$HOME/bin/dateish`.tar.gz mx:~/backup/tub
+
+13 9 * * 1-5 env DISPLAY=tub:0 ~/bin/fetch_image
+
+#MAILTO=phil
+
+@reboot /usr/local/bin/spamd -c -d -p 1783
+_CRONTAB_
+undef $ct;
+
+
+## test block removal using crontab select
+$ct = new Config::Crontab;
+$ct->read( -file => $crontabf );
+ok( $ct->dump, $crontabd );
+$ct->remove($ct->select( -type => 'comment' ));
+$ct->remove($ct->select( -type => 'event',
+			 -active => 0 ));
 ok( $ct->dump, <<'_CRONTAB_' );
 MAILTO=scott
 

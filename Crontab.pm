@@ -3,7 +3,7 @@
 ## 
 ## Scott Wiersdorf
 ## Created: Fri May  9 14:03:01 MDT 2003
-## $SMEId: local/perl/Config/Crontab/Crontab.pm,v 1.28 2003/05/22 13:59:42 scottw Exp $
+## $SMEId: local/perl/Config/Crontab/Crontab.pm,v 1.29 2003/07/11 20:53:07 scottw Exp $
 ## 
 ## Config::Crontab - a crontab(5) parser
 ## 
@@ -33,9 +33,9 @@ use vars qw( $VERSION @ISA );
 
 ## these two are for the 'write' method
 use Fcntl;
-use POSIX qw(tmpnam);
+use File::Temp qw(:POSIX);
 
-$VERSION = '1.01';
+$VERSION = '1.02';
 
 sub init {
     my $self = shift;
@@ -43,7 +43,7 @@ sub init {
 
     $self->file('');
     $self->mode('block');
-    $self->squeeze(undef);     ## only in block mode
+    $self->squeeze(1);     ## only in block mode
     $self->strict(0);
     $self->blocks([]);
     $self->error('');
@@ -94,7 +94,6 @@ sub read {
     $self->blocks([]);
     $self->error('');
 
-    my $state = 0;
   PARSE: {
 	local $/;
 
@@ -137,6 +136,8 @@ sub blocks {
     return grep { UNIVERSAL::isa($_, 'Config::Crontab::Block') }
       grep { ref($_) } @{$self->{'_blocks'}};
 }
+
+## FIXME: nice to have a select_blocks method?
 
 sub select {
     my $self = shift;
@@ -359,7 +360,7 @@ basic elements:
 
 =item B<Config::Crontab::Event>
 
-Any lines in a crontab that look like these:
+Any lines in a crontab that look like these are B<Event> objects:
 
     5 10 * * * /some/command
     @reboot /bin/mystartup.sh
@@ -374,7 +375,7 @@ objects.
 
 =item B<Config::Crontab::Env>
 
-Any lines in a crontab that look like these:
+Any lines in a crontab that look like these are B<Env> objects:
 
     MAILTO=joe
     SOMEVAR = some_value
@@ -389,7 +390,7 @@ Please refer to it for details on manipulating B<Env> objects.
 =item B<Config::Crontab::Comment>
 
 Any lines containing only whitespace or lines beginning with a pound
-sign (but are not B<Event> or B<Env> objects), like these:
+sign (but are not B<Event> or B<Env> objects) are B<Comment> objects:
 
     ## this is a comment
     (imagine somewhitespace here)
@@ -417,7 +418,7 @@ particular job runs:
 
     30 2 * * * /usr/local/sbin/pirate --arg=matey
 
-to 3:15 am because of daylight saving time (i.e., we don't want this
+to 3:30 am because of daylight saving time (i.e., we don't want this
 job to run twice).
 
 We can do something like this:
@@ -452,7 +453,7 @@ itself).
 =item *
 
 The I<set> methods for B<Event> (and other) objects are usually
-invoked the same way as their I<get> method with an argument.
+invoked the same way as their I<get> method except with an argument.
 
 =item *
 
@@ -460,13 +461,13 @@ We must write the crontab back out to file with the B<write> method.
 
 =back
 
-Here's how you might do it in a one-line Perl program:
+Here's how we might do the same thing in a one-line Perl program:
 
     perl -MConfig::Crontab -e '$ct=new Config::Crontab; $ct->read; \
     ($ct->select(-command_re=>"pirate --arg=matey"))[0]->hour(3); \
     $ct->write'
 
-Ok. Now we need to add a new cron job:
+Nice! Ok. Now we need to add a new crontab entry:
 
     35 6 * * * /bin/alarmclock --ring
 
@@ -496,24 +497,24 @@ We learn the following things from this example:
 
 Only B<Block> objects can be added to B<Crontab> objects (see
 L</CAVEATS>). B<Block> objects may be added via the B<last> method
-(and several others, including B<first>, B<up>, B<down>, B<before>,
-and B<after>).
+(and several other methods, including B<first>, B<up>, B<down>,
+B<before>, and B<after>).
 
 =item *
 
-B<Block> objects can be populated in a variety of ways, including a
-string (via B<-data> and which may--and frequently does--span multiple
-lines via a 'here' document), the B<-lines> attribute (which takes a
-list reference), and the B<last> method. In addition to the B<last>
-method, B<Block> objects use the same methods for adding and moving
-objects that the B<Crontab> object does: B<first>, B<last>, B<up>,
-B<down>, B<before>, and B<after>.
+B<Block> objects can be populated in a variety of ways, including the
+B<-data> attribute (a string which may--and frequently does--span
+multiple lines via a 'here' document), the B<-lines> attribute (which
+takes a list reference), and the B<last> method. In addition to the
+B<last> method, B<Block> objects use the same methods for adding and
+moving objects that the B<Crontab> object does: B<first>, B<last>,
+B<up>, B<down>, B<before>, and B<after>.
 
 =back
 
-After the following B<Module Utility> section, the remainder of this
-document is a reference manual and describes the methods available
-(and how to use them) in each of the 5 classes: B<Config::Crontab>,
+After the B<Module Utility> section, the remainder of this document
+is a reference manual and describes the methods available (and how to
+use them) in each of the 5 classes: B<Config::Crontab>,
 B<Config::Crontab::Block>, B<Config::Crontab::Event>,
 B<Config::Crontab::Env>, and B<Config::Crontab::Comment>. The reader
 is also encouraged to look at the example CGI script in the F<eg>
@@ -567,14 +568,14 @@ reschedule the backups to run weekends too:
 
 =item *
 
-send all mail for this crontab to joe@schmoe.org
+change all 'MAILTO' environment settings in this crontab to 'joe@schmoe.org':
 
   perl -MConfig::Crontab -e '$c=new Config::Crontab; $c->read; \
   $_->value(q!joe@schmoe.org!) for $c->select(-name => "MAILTO"); $c->write'
 
 =item *
 
-strip all comments from a crontab
+strip all comments from a crontab:
 
   perl -MConfig::Crontab -e '$c=new Config::Crontab; $c->read; \
   $c->delete($c->select(-type => "comment")); $c->write'
@@ -582,26 +583,35 @@ strip all comments from a crontab
 =item *
 
 disable an entire block of commands (the block that has the word
-'Friday' in it)
+'Friday' in it):
 
   perl -MConfig::Crontab -e '$c=new Config::Crontab; $c->read; \
   $c->block($c->select(-data_re => "Friday"))->active(0); $c->write'
 
 =back
 
+=head1 PACKAGE Config::Crontab
+
+This section describes B<Config::Crontab> objects (hereafter simply
+B<Crontab> objects). A B<Crontab> object is an abstracted way of
+dealing with an entire B<crontab(5)> file. The B<Crontab> class has
+methods to allow you to select, add, or delete B<Block> objects as
+well as read and parse crontab files and write crontab files.
+
 =head2 init([%args])
 
 This method is called implicitly when you instantiate an object via
 B<new>. B<init> takes the same arguments as B<new> and B<read>. If
 the B<-file> argument is specified (and is non-false), B<init> will
-invoke B<read> automatically. Use B<init> to re-initialize an object.
+invoke B<read> automatically with the B<-file> value. Use B<init> to
+re-initialize an object.
 
 Example:
 
     ## auto-parses foo.txt in implicit call to init
     $ct = new Config::Crontab( -file => 'foo.txt' );
 
-    ## re-initialize the object with defaults and a new file
+    ## re-initialize the object with default values and a new file
     $ct->init( -file => 'bar.txt' );
 
 =head2 strict([boolean])
@@ -637,7 +647,7 @@ Examples:
 Parses the crontab file specifed by B<file>. If B<file> is not set
 (or is false in some way), the crontab will be read from a pipe to
 C<crontab -l>. B<read> optionally takes the same arguments as B<new>
-and B<init> in C<key => value> style lists.
+and B<init> in C<key =E<gt> value> style lists.
 
 Until you B<read> the crontab, the B<Crontab> object will be
 uninitialized and will contain no data. You may re-read existing
@@ -648,32 +658,64 @@ B<error>. Use B<init> to completely refresh an object.
 
 If B<read> fails, B<error> will be set.
 
-Example:
+Examples:
 
+    ## reads the crontab for this UID (via crontab -l)
+    $ct = new Config::Crontab;
+    $ct->read;
+
+    ## reads the crontab from a file
     $ct = new Config::Crontab;
     $ct->read( -file => '/var/cronbackups/cron1' );
 
-    ## same thing
+    ## same thing as above
     $ct = new Config::Crontab( -file => '/var/cronbackups/cron1' );
-    $ct->read;
+    $ct->read; ## '-file' attribute already set
 
-    ## ditto
+    ## ditto using 'file' method
     $ct = new Config::Crontab;
     $ct->file('/var/cronbackups/cron1');
     $ct->read;
 
-    ## error-checking
+    ## ditto, using a pipe
+    $ct = new Config::Crontab;
+    $ct->file('cat /var/cronbackups/cron1|');
+    $ct->read;
+
+    ## ditto, using 'read' method
+    $ct = new Config::Crontab;
+    $ct->read( -file => 'cat /var/cronbackups/cron1|');
+
+    ## now fortified with error-checking
     $ct->read
       or do {
         warn $ct->error;
         return;
       };
 
+=cut
+
+## FIXME: need to say something about squeeze here, but squeeze(0)
+## doesn't seem to work correctly (i.e., it still squeezes the file)
+
+=head2 mode([mode])
+
+Returns the current parsing mode for this object instance. If a mode
+is passed as an argument, next time this instance parses a crontab
+file, it will use this new mode. Valid modes are I<line>, I<block>
+(the default), or I<file>.
+
+Example:
+
+    ## re-read this crontab in 'file' mode
+    $ct->mode('file');
+    $ct->read;
+
 =head2 blocks([\@blocks])
 
-Returns a list of B<Block> objects in this crontab. B<blocks> also
-takes an optional list reference as an argument to set this crontab's
-block list.
+Returns a list of B<Block> objects in this crontab. The B<blocks>
+method also takes an optional list reference as an argument to set
+this crontab's block list.
 
 Example:
 
@@ -685,16 +727,23 @@ Example:
         print $block->dump;
     }
 
+    ## one way to remove unwanted blocks from a crontab
+    my @keepers = $ct->select( -type    => 'comment',
+                               -data_re => 'keep this block' );
+    $ct->blocks(\@keepers);
+
+    ## another way to do it
+    $ct->remove($ct->select( -type     => 'comment',
+                             -data_nre => 'keep this block' ));
+
 =head2 select([%criteria])
 
-Returns a list (list context) of crontab lines that match the
-specified criteria.  Multiple criteria may be specified. If no
-criteria are specified, B<select> returns a list of all lines in the
-B<Crontab> object.
+Returns a list of crontab lines that match the specified criteria.
+Multiple criteria may be specified. If no criteria are specified,
+B<select> returns a list of all lines in the B<Crontab> object.
 
 Field names should be preceeded by a hyphen (though without a hyphen
-is acceptable too; we use hyphens to avoid the need for quoting keys
-and avoid potential bareword collisions).
+is acceptable too).
 
 The following criteria and associated values are available:
 
@@ -704,15 +753,22 @@ The following criteria and associated values are available:
 
 One of 'event', 'env', or 'comment'
 
-=item * -(field name)
+=item * -E<lt>fieldE<gt>
 
 The object in the block will be matched using 'eq' (string comparison)
 against this criterion.
 
-=item * -(field name)_re
+=item * -E<lt>fieldE<gt>_re
 
 The value of the object method specified will be matched using Perl
-regular expressions (see L<perlre>) instead of string comparisons.
+regular expressions (see L<perlre>) instead of string comparisons
+(uses the C<=~> operator internally).
+
+=item * -E<lt>fieldE<gt>_nre
+
+The value of the object method specified will be negatively matched
+using Perl regular expressions (see L<perlre>) instead of string
+comparisons (uses the C<!~> operator internally).
 
 =back
 
@@ -742,6 +798,10 @@ Examples:
     @events = $ct->select( -type    => 'event',
                            -hour_re => '^(?:[8-9]|1[0-6])$' );
 
+    ## select all cron jobs that don't execute during business hours
+    @events = $ct->select( -type     => 'event',
+                           -hour_nre => '^(?:[8-9]|1[0-6])$' );
+
     ## get all event lines in the crontab
     @events = $ct->select( -type => 'event' );
 
@@ -767,8 +827,10 @@ Examples:
     $block = $ct->block($existing_crontab_line);
     $block->dump;
 
-    ## find and remove the block that baz is executed
-    $block = $ct->block( $ct->select(-type => 'event', command_re => '/bin/baz') );
+    ## find and remove the block in which '/bin/baz' is executed
+    my $event = $ct->select( -type       => 'event',
+                             -command_re => '/bin/baz');
+    $block = $ct->block($event);
     $ct->remove($block);
 
 =head2 remove($block)
@@ -793,7 +855,8 @@ Example:
 
     ## look for the block containing 'oldtuesday' and replace it with our new block
     $newblock = new Config::Crontab::Block( -data => '5 10 * * Tue /bin/tuesday' );
-    $ct->replace($ct->block($ct->select(-data_re => 'oldtuesday')), $newblock);
+    my $oldblock = $ct->block($ct->select(-data_re => 'oldtuesday'));
+    $ct->replace($oldblock, $newblock);
 
 =head2 up($block), down($block)
 
@@ -844,12 +907,13 @@ Example:
 
 =head2 write([$filename])
 
-Writes out the crontab to the file specified by the B<file> method.
-If B<file> is not set (or is false), B<write> will attempt to write
-to a temporary file and load it via the C<crontab> program.
+Writes the crontab to the file specified by the B<file> method. If
+B<file> is not set (or is false), B<write> will attempt to write to
+a temporary file and load it via the C<crontab> program (e.g.,
+C<crontab filename>).
 
 You may specify an optional filename as an argument to set B<file>,
-which will then be used immediately as the filename.
+which will then be used as the filename.
 
 If B<write> fails, B<error> will be set.
 
@@ -866,10 +930,15 @@ Example:
     ## write will use this filename)
     $ct->write('/var/mycronbackups/cron1.txt');
 
+    ## same thing
+    $ct->file('/var/mycronbackups/cron1.txt');
+    $ct->write;
+
 =head2 error([string])
 
 Returns the last error encountered (usually during a file I/O
-operation). Pass an empty string to reset.
+operation). Pass an empty string to reset (calling B<init> will also
+reset it).
 
 Example:
 
@@ -884,6 +953,9 @@ Example:
 
     ## show crontab
     print $ct->dump;
+
+    ## same as 'crontab -l' except pretty-printed
+    $ct = new Config::Crontab; $ct->read; print $ct->dump;
 
 =cut
 
@@ -998,6 +1070,8 @@ sub select {
 	while( my($key,$value) = each %crit ) {
 	    $key =~ s/^\-//;  ## strip leading hyphen
 
+	    ## FIXME: would be nice to have a negated 'type' option or a re
+
 	    ## special case for 'type'
 	    if( $key eq 'type' ) {
 		if( $value eq 'event' ) {
@@ -1022,6 +1096,9 @@ sub select {
 		no strict 'refs';
 		if( $key =~ /^(.+)_re$/ ) {
 		    next LINE unless $line->$1() =~ qr($value);
+		}
+		elsif( $key =~ /^(.+)_nre$/ ) {
+		    next LINE unless $line->$1() !~ qr($value);
 		}
 		else {
 		    next LINE unless $line->$key() eq $value;
@@ -1076,23 +1153,23 @@ sub active {
 =head1 PACKAGE Config::Crontab::Block
 
 This section describes B<Config::Crontab::Block> objects (hereafter
-B<Block> objects). A B<Block> object is an abstracted way of dealing
-with groups of crontab(5) lines. Depending on how B<Config::Crontab>
-parsed the file (see the B<read> method in B<Config::Crontab> above),
-a block may consist of:
+referred to as B<Block> objects). A B<Block> object is an abstracted
+way of dealing with groups of crontab(5) lines. Depending on how
+B<Config::Crontab> parsed the file (see the B<read> and B<mode>
+methods in B<Config::Crontab> above), a block may consist of:
 
 =over 4
 
 =item a single line (e.g., a crontab event, environment setting, or comment)
 
 =item a "paragraph" of lines (a group of lines, each group separated
-by at least two newlines)
+by at least two newlines). This is the default parsing mode.
 
 =item the entire crontab file
 
 =back
 
-The default for B<Config::Crontab> is to read in block (paragraph)
+The default for B<Config::Crontab> is to read in I<block> (paragraph)
 mode. This allows you to group lines that have a similar purpose as
 well as order lines within a block (e.g., often you want an
 environment setting to take effect before certain cron commands
@@ -1156,11 +1233,11 @@ each line being a block you get an extra newline between each line).
     10       1        10            30 9 * * Wed /bin/meeting
 
 Notice that there is only one block in file mode, and each line is a
-block line also (but not a separate block).
+block line (but not a separate block).
 
 =back
 
-=head1 Methods
+=head1 METHODS
 
 This section describes methods accessible from B<Block> objects.
 
@@ -1628,7 +1705,7 @@ We can break down the B<datetime> field into the following parts:
    ------  ----  ---  -----  ---
    minute  hour  dom  month  dow
 
-We might also see a "special" datetime part:
+We might also see an event with a "special" datetime part:
 
     @daily    /bin/brush --teeth --feet
     --------  -------------------------
@@ -1636,14 +1713,14 @@ We might also see a "special" datetime part:
 
 This special datetime field can also be called 'special':
 
-    @daily    /bin/brush --teeth --feet
+    @daily   /bin/brush --teeth --feet
     -------  -------------------------
     special          command
 
 These and other methods for accessing and manipulating B<Event>
 objects are described in subsequent sections.
 
-=head1 Methods
+=head1 METHODS
 
 This section describes methods available to manipulate B<Event>
 objects' creation and attributes.
@@ -2102,6 +2179,8 @@ we define the following parts of the B<Env> object:
 These and other methods for accessing and manipulating B<Event>
 objects are described in subsequent sections.
 
+=head1 METHODS
+
 =head2 new([%args])
 
 Creates a new B<Env> object. You may create B<Env> objects any of the
@@ -2290,7 +2369,7 @@ B<Comment> objects). A B<Comment> object is an abstracted way of
 dealing with crontab comments and whitespace (blank lines or lines
 that consist only of whitespace).
 
-Available B<Comment> methods follow.
+=head1 METHODS
 
 =head2 new([%args])
 
@@ -2577,8 +2656,8 @@ __END__
 
 This version of B<Config::Crontab> does not directly support the
 optional ":group" and "/<login-class>" suffixes described in
-L<crontab(5)> directly. It will treat them as part of the B<command>
-field and thus indirectly supports them.
+L<crontab(5)>. It will treat them as part of the B<command> field and
+thus indirectly supports them.
 
 =item *
 
@@ -2646,6 +2725,17 @@ doesn't support weekday 7 or 3-letter month and day name abbreviations)
 B<Config::Crontab> will support SysV-syntax since it is a proper subset
 of Vixie cron syntax, but you will need to necessarily perform your
 own syntax checking and omit elements unique to Vixie cron in your UI.
+
+=back
+
+=head1 ACKNOWLEDGEMENTS
+
+=over 4
+
+=item *
+
+Juan Jose Natera Abreu (naterajj@yahoo.com) for unsafe POSIX::tmpnam
+alert; now using File::Temp.
 
 =back
 
