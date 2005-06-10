@@ -1,6 +1,6 @@
 use Test;
 use blib;
-BEGIN { plan tests => 123 };
+BEGIN { plan tests => 125 };
 use Config::Crontab;
 ok(1);
 
@@ -439,3 +439,21 @@ ok( $block->dump, <<_DUMPED_ );
 #MAILTO=joe
 #5 0 * * * /bin/foo
 _DUMPED_
+
+## a system block
+undef $block;
+$block = new Config::Crontab::Block;
+$block->system(1);
+$block->data(<<_DATA_);
+## this is foo
+#6 * 0 0 Sat rogerdodger /bin/saturday
+_DATA_
+ok( ($block->select(-type => 'event'))[0]->user, 'rogerdodger' );
+
+undef $block;
+$block = new Config::Crontab::Block( -system => 1,
+				     -data   => <<_DATA_);
+## this is foo
+#6 * 0 0 Sat wonka /bin/saturday
+_DATA_
+ok( ($block->select(-type => 'event'))[0]->user, 'wonka' );

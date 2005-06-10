@@ -1,6 +1,6 @@
 use Test;
 use blib;
-BEGIN { plan tests => 97 };
+BEGIN { plan tests => 124 };
 use Config::Crontab;
 ok(1);
 
@@ -182,3 +182,72 @@ undef $event;
 ## failure via -data
 ok( ! defined($event = new Config::Crontab::Event( -data => 1 )) );
 undef $event;
+
+## test system (user) syntax via -data
+ok( $event = new Config::Crontab::Event( -data => '3 2 1 * Fri joe foo bar',
+					 -system => 1 ) );
+ok( $event->minute, 3 );
+ok( $event->dow, 'Fri' );
+ok( $event->user, 'joe' );
+ok( $event->command, 'foo bar' );
+undef $event;
+
+## test system (user) syntax via methods
+$event = new Config::Crontab::Event;
+ok( $event->system, 0 );
+$event->hour('5');
+$event->minute('26');
+$event->user('joe');
+ok( $event->system );
+$event->command('/bin/bash');
+ok( $event->dump, "26\t5\t*\t*\t*\tjoe\t/bin/bash" );
+undef $event;
+
+## test system (user) syntax via -data and methods
+$event = new Config::Crontab::Event( -data => '3 2 1 * Fri foo bar' );
+ok( $event->system, 0 );
+$event->user('joe');
+ok( $event->system, 1 );
+ok( $event->dump, "3\t2\t1\t*\tFri\tjoe\tfoo bar" );
+undef $event;
+
+## test system (user) syntax via -data and methods
+$event = new Config::Crontab::Event;
+$event->system(1);
+$event->data( "3\t2\t1\t*\tFri\tfoo\tbar" );
+ok( $event->user, 'foo' );
+ok( $event->command, 'bar' );
+undef $event;
+
+## test system (user) syntax (REMEMBER: -data always overrides all other params except 'system'!)
+$event = new Config::Crontab::Event( -data   => '3 2 1 * Fri foo bar',
+				     -user   => 'joe', );  ## ignored
+ok( $event->system, 0 );
+ok( $event->user, '' );
+ok( $event->command, 'foo bar' );
+ok( $event->dump, "3 2 1 * Fri foo bar" );
+undef $event;
+
+## test system (user) syntax
+$event = new Config::Crontab::Event( -data   => '3 2 1 * Fri foo bar',
+				     -system => 1 );
+ok( $event->system, 1 );
+ok( $event->user, 'foo' );
+ok( $event->command, 'bar' );
+ok( $event->dump, "3\t2\t1\t*\tFri\tfoo\tbar" );
+undef $event;
+
+## test system (user) syntax
+$event = new Config::Crontab::Event;
+$event->data('3 2 1 * Fri foo bar');
+$event->user('joe');
+ok( $event->system, 1 );
+ok( $event->command, 'foo bar');
+ok( $event->dump, "3\t2\t1\t*\tFri\tjoe\tfoo bar" );
+$event->user('zelda');
+ok( $event->data, "3\t2\t1\t*\tFri\tzelda\tfoo bar" );
+
+$event->system(0);
+$event->data('1 3 5 * Wed blech winnie');
+ok( $event->dump, '1 3 5 * Wed blech winnie' );
+ok( $event->user, '' );

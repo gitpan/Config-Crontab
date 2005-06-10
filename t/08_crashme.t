@@ -1,6 +1,6 @@
 use Test;
 use blib;
-BEGIN { plan tests => 6 };
+BEGIN { plan tests => 5 };
 use Config::Crontab;
 ok(1);
 
@@ -13,7 +13,7 @@ my $env1 = new Config::Crontab::Env( -data => 'MAILTO=joe@schmoe.org' );
 my $event1 = new Config::Crontab::Event( -data => '30 4 * * Wed /bin/wednesday' );
 
 ## do tests by adding non-block objects to a crontab
-ok( $ct = new Config::Crontab );
+$ct = new Config::Crontab;
 ok( $ct->last($com1, $com2, $env1, $event1), 0 );
 my $rv = <<'_CRONTAB_';
 ## Well! If microwaves don't

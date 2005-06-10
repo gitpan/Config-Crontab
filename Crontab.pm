@@ -3,7 +3,7 @@
 ## 
 ## Scott Wiersdorf
 ## Created: Fri May  9 14:03:01 MDT 2003
-## $SMEId: local/perl/Config/Crontab/Crontab.pm,v 1.30 2003/09/11 15:22:04 scottw Exp $
+## $SMEId: local/perl/Config/Crontab/Crontab.pm,v 1.37 2005/06/10 22:14:50 scottw Exp $
 ## 
 ## Config::Crontab - a crontab(5) parser
 ## 
@@ -35,7 +35,7 @@ use vars qw( $VERSION @ISA );
 use Fcntl;
 use File::Temp qw(:POSIX);
 
-$VERSION = '1.03';
+$VERSION = '1.10';
 
 sub init {
     my $self = shift;
@@ -47,11 +47,17 @@ sub init {
     $self->strict(0);
     $self->blocks([]);
     $self->error('');
+    $self->system(0);
+    $self->owner('');
+    $self->owner_re( '[^a-zA-Z0-9\._-]' );
 
-    $self->file(    $args{'-file'})      if exists $args{'-file'};
-    $self->mode(    $args{'-mode'})      if exists $args{'-mode'};
-    $self->squeeze( $args{'-squeeze'})   if exists $args{'-squeeze'};
-    $self->strict(  $args{'-strict'})    if exists $args{'-strict'};
+    $self->file(     $args{'-file'})     if exists $args{'-file'};
+    $self->mode(     $args{'-mode'})     if exists $args{'-mode'};
+    $self->squeeze(  $args{'-squeeze'})  if exists $args{'-squeeze'};
+    $self->strict(   $args{'-strict'})   if exists $args{'-strict'};
+    $self->system(   $args{'-system'})   if exists $args{'-system'};
+    $self->owner(    $args{'-owner'})    if exists $args{'-owner'};
+    $self->owner_re( $args{'-owner_re'}) if exists $args{'-owner_re'};
 
     ## auto-parse if file is specified
     $self->read if $self->file;
@@ -63,10 +69,18 @@ sub read {
     my $self = shift;
     my %args = @_;
 
-    $self->file(    $args{'-file'})      if exists $args{'-file'};
-    $self->mode(    $args{'-mode'})      if exists $args{'-mode'};
-    $self->squeeze( $args{'-squeeze'})   if exists $args{'-squeeze'};
-    $self->strict(  $args{'-strict'})    if exists $args{'-strict'};
+    $self->file(     $args{'-file'})     if exists $args{'-file'};
+    $self->mode(     $args{'-mode'})     if exists $args{'-mode'};
+    $self->squeeze(  $args{'-squeeze'})  if exists $args{'-squeeze'};
+    $self->strict(   $args{'-strict'})   if exists $args{'-strict'};
+    $self->system(   $args{'-system'})   if exists $args{'-system'};
+    $self->owner(    $args{'-owner'})    if exists $args{'-owner'};
+    $self->owner_re( $args{'-owner_re'}) if exists $args{'-owner_re'};
+
+    ## set default system crontab
+    if( $self->system && ! $self->file ) {
+	$self->file('/etc/crontab');
+    }
 
     ## parse the file accordingly
     if( $self->file ) {
@@ -79,8 +93,13 @@ sub read {
 	      return;
 	  }
     }
+
     else {
-	open FILE, "crontab -l 2>/dev/null|"
+	my $crontab_cmd = "crontab -l 2>/dev/null|";
+	if( $self->owner ) {
+	    $crontab_cmd = "crontab -u " . $self->owner . " -l 2>/dev/null|";
+	}
+	open FILE, $crontab_cmd
 	  or do {
 	      $self->error($!);
 	      if( $self->strict ) {
@@ -115,7 +134,8 @@ sub read {
 	local $_;
 	while( <FILE> ) {
 	    chomp;
-	    $self->last( new Config::Crontab::Block( -data => $_ ) );
+	    $self->last( new Config::Crontab::Block( -system => $self->system,
+						     -data   => $_ ) );
 	}
     }
     close FILE;
@@ -137,8 +157,6 @@ sub blocks {
       grep { ref($_) } @{$self->{'_blocks'}};
 }
 
-## FIXME: nice to have a select_blocks method?
-
 sub select {
     my $self = shift;
     my @results = ();
@@ -146,9 +164,56 @@ sub select {
     @results;
 }
 
+sub select_blocks {
+    my $self = shift;
+    my %crit = @_;
+    my @results = ();
+
+    unless( keys %crit ) {
+	@results = $self->blocks;
+    }
+
+    while( my($key, $value) = each %crit ) {
+	$key =~ s/^\-//;  ## strip leading hyphen
+
+	if( $key eq 'index' ) {
+	    unless( defined $value ) {
+		if( $self->strict ) {
+		    carp "index value undefined\n";
+		}
+		next;
+	    }
+
+	    ## a list ref of integers
+	    if( ref($value) eq 'ARRAY' ) {
+		push @results, @{$self->{'_blocks'}}[@$value];
+	    }
+
+	    ## an integer
+	    elsif( $value =~ /^\d+$/ ) {
+		push @results, @{$self->{'_blocks'}}[$value];
+	    }
+
+	    else {
+		if( $self->strict ) {
+		    carp "index value not recognized\n";
+		}
+	    }
+	}
+
+	else {
+	    if( $self->strict ) {
+		carp "Unknown block selection type '$key'\n";
+	    }
+	}
+    }
+    @results;
+}
+
 sub block {
     my $self = shift;
-    my $obj  = shift;
+    my $obj  = shift
+      or return;
     my $rblock;
 
   BLOCK: for my $block ( $self->blocks ) {
@@ -223,7 +288,14 @@ sub write {
 	print CT $self->dump;
 	close CT;
 
-	my $crontab = `crontab $tmpfile 2>&1`; chomp $crontab;
+	my $crontab;
+	if( my $owner = $self->owner ) {
+	    $crontab = `crontab -u $owner $tmpfile 2>&1`;
+	}
+	else {
+	    $crontab = `crontab $tmpfile 2>&1`;
+	}
+	chomp $crontab;
 	unlink $tmpfile;
 
 	if( $crontab || $? ) {
@@ -249,6 +321,41 @@ sub dump {
     }
 
     return $ret;
+}
+
+sub owner {
+    my $self = shift;
+    if( @_ ) {
+	my $owner = shift;
+	if( $owner ) {
+	    unless( defined( getpwnam($owner) ) ) {
+		$self->error("Unknown user: $owner");
+		if( $self->strict ) {
+		    croak $self->error;
+		}
+		return;
+	    }
+
+	    if( $owner =~ $self->owner_re ) {
+		$self->error("Illegal username: $owner");
+		if( $self->strict ) {
+		    croak $self->error;
+		}
+		return;
+	    }
+	}
+	$self->{_owner} = $owner;
+    }
+    return ( defined $self->{_owner} ? $self->{_owner} : '' );
+}
+
+sub owner_re {
+    my $self = shift;
+    if( @_ ) {
+	my $re = shift;
+	$self->{_owner_re} = qr($re);
+    }
+    return ( defined $self->{_owner_re} ? $self->{_owner_re} : qr() );
 }
 
 ############################################################
@@ -302,6 +409,14 @@ Config::Crontab - Read/Write Vixie compatible crontab(5) files
 
   ## save our crontab again
   $ct->write;
+
+  ###############################
+  ## read joe's crontab (must have root permissions)
+  ###############################
+
+  ## same as "crontab -u joe -l"
+  my $ct = new Config::Crontab( -owner => 'joe' );
+  $ct->read;
 
 =head1 DESCRIPTION
 
@@ -401,13 +516,74 @@ objects.
 
 =back
 
-Armed with a little knowledge, we're dangerous and ready to try it
-out.
+=head2 Illustration
+
+Here is a simple crontab file:
+
+  MAILTO=joe@schmoe.org
+
+  ## send reminder in April
+  3 10 * Apr Fri  joe  echo "Friday a.m. in April"
+
+The file consists of an environment variable setting (MAILTO), a
+comment, and a command to run. After parsing the above file, 
+B<Config::Crontab> would break it up into the following objects:
+
+    +---------------------------------------------------------+
+    |     Config::Crontab object                              |
+    |                                                         |
+    |  +---------------------------------------------------+  |
+    |  |      Config::Crontab::Block object                |  |
+    |  |                                                   |  |
+    |  |  +---------------------------------------------+  |  |
+    |  |  |       Config::Crontab::Env object           |  |  |
+    |  |  |                                             |  |  |
+    |  |  |  -name => MAILTO                            |  |  |
+    |  |  |  -value => joe@schmoe.org                   |  |  |
+    |  |  |  -data => MAILTO=joe@schmoe.org             |  |  |
+    |  |  +---------------------------------------------+  |  |
+    |  +---------------------------------------------------+  |
+    |                                                         |
+    |  +---------------------------------------------------+  |
+    |  |      Config::Crontab::Block object                |  |
+    |  |                                                   |  |
+    |  |  +---------------------------------------------+  |  |
+    |  |  |       Config::Crontab::Comment object       |  |  |
+    |  |  |                                             |  |  |
+    |  |  |  -data => ## send reminder in April         |  |  |
+    |  |  +---------------------------------------------+  |  |
+    |  |                                                   |  |
+    |  |  +---------------------------------------------+  |  |
+    |  |  |       Config::Crontab::Event Object         |  |  |
+    |  |  |                                             |  |  |
+    |  |  |  -datetime => 3 10 * Apr Fri                |  |  |
+    |  |  |  -special => (empty)                        |  |  |
+    |  |  |  -minute => 3                               |  |  |
+    |  |  |  -hour => 10                                |  |  |
+    |  |  |  -dom => *                                  |  |  |
+    |  |  |  -month => Apr                              |  |  |
+    |  |  |  -dow => Fri                                |  |  |
+    |  |  |  -user => joe                               |  |  |
+    |  |  |  -command => echo "Friday a.m. in April"    |  |  |
+    |  |  +---------------------------------------------+  |  |
+    |  +---------------------------------------------------+  |
+    +---------------------------------------------------------+
+
+You'll notice the main Config::Crontab object encapsulates the entire
+file. The parser found two B<Block> objects: the lone MAILTO variable
+setting, and the comment and command (together). Two or more newlines
+together in a crontab file constitute a block separator. This allows
+you to logically group commands (as most people do anyway) in the
+crontab file, and work with them as a Config::Crontab::Block objects.
+
+The second block consists of a B<Comment> object and an B<Event>
+object, shown are some of the data methods you can use to get or set
+data in those objects.
 
 =head2 Practical Usage: A Brief Tutorial
 
-Now that we know what things look like and what they're called, let's
-play around a little.
+Now that we know what B<Config::Crontab> objects look like and what
+they're called, let's play around a little.
 
 Let's say we have an existing crontab on many machines that we want
 to manage.  The crontab contains some machine-dependent information
@@ -588,6 +764,13 @@ disable an entire block of commands (the block that has the word
   perl -MConfig::Crontab -e '$c=new Config::Crontab; $c->read; \
   $c->block($c->select(-data_re => "Friday"))->active(0); $c->write'
 
+=item *
+
+copy one user's crontab to another user:
+
+  perl -MConfig::Crontab -e '$c = new Config::Crontab(-owner => "joe"); \
+  $c->read; $c->owner("mike"); $c->write'
+
 =back
 
 =head1 PACKAGE Config::Crontab
@@ -635,12 +818,77 @@ B<write> sets B<error> and warns: "Could not open (filename):
 (reason)". If strict is disabled, B<write> returns I<undef> (B<error> is
 set).
 
+=item *
+
+Croaks if an illegal username is specified in the B<-owner> parameter.
+
 =back
 
 Examples:
 
     ## disable strict (default)
     $ct->strict(0);
+
+=head2 system([boolean])
+
+B<system> tells B<config::crontab> to assume that the crontab object
+is after the pattern described in L<crontab(5)> with an extra I<user>
+field before the I<command> field:
+
+  @reboot     joeuser    /usr/local/bin/fetchmail -d 300
+
+where the given command will be executed by said user. when a crontab
+file (e.g., F</etc/crontab>) is parsed without B<system> enabled, the
+I<user> field will be lumped in with the command. When enabled, the
+user field will be accessible in each event object via the B<user>
+method (see L</"user"> in the B<event> documentation below).
+
+=head2 owner([string])
+
+B<owner> sets the owner of the crontab. If you're running
+Config::Crontab as a privileged user (e.g., "root"), you can read and
+write user crontabs by specifying B<owner> either in the constructor,
+during B<init>, or using B<owner> before a B<read> or B<write> method
+is called:
+
+  $c = new Config::Crontab( -owner => 'joe' );
+  $c->read;  ## reading joe's crontab
+
+Or another way:
+
+  $c = new Config::Crontab;
+  $c->owner('joe');
+  $c->read;  ## reading joe's crontab
+
+You can use this to copy a crontab from one user to another:
+
+  $c->owner('joe');
+  $c->read;
+  $c->owner('bob');
+  $c->write;
+
+=head2 owner_re([regex])
+
+B<Config::Crontab> is strict in what it will allow for a username,
+since this information internally is passed to a shell. If the
+username specified is not a user on the system, B<Config::Crontab>
+will set B<error> with "Illegal username" and return I<undef>; if
+B<strict> mode is enabled, B<Config::Crontab> will croak with the same
+error.
+
+Further, once the username is determined valid, the username is then
+checked against a regular expression to thwart null string attacks and
+other maliciousness. The default regular expression used to check for
+a safe username is:
+
+    /[^a-zA-Z0-9\._-]/
+
+If the pattern matches (i.e., if any characters other than the ones
+above are found in the supplied username), B<Config::Crontab> will
+set B<error> with "Illegal username" and return I<undef>. If B<strict>
+mode is enabled, B<Config::Crontab> will croak with the same error.
+
+  $c->owner_re('[^a-zA-Z0-9_\.-#]');  ## allow # in usernames
 
 =head2 read([%args])
 
@@ -732,7 +980,7 @@ Example:
                                -data_re => 'keep this block' );
     $ct->blocks(\@keepers);
 
-    ## another way to do it
+    ## another way to do it (notice 'nre' instead of 're')
     $ct->remove($ct->select( -type     => 'comment',
                              -data_nre => 'keep this block' ));
 
@@ -810,6 +1058,40 @@ Examples:
 
     ## get a line: note list context, also, no 'type' specified
     ($line) = $ct->select( -data_re => 'start backups' );
+
+=head2 select_blocks([%criteria])
+
+Returns a list of crontab Block objects that match the specified
+criteria. If no criteria are specified, B<select_blocks> behaves just
+like the B<blocks> method, returning all blocks in the crontab object.
+
+The following criteria keys are available:
+
+=over 4
+
+=item * -index
+
+An integer or list reference of integers. Returns a list of blocks
+indexed by the given integer(s).
+
+Example:
+
+  ## select the first block in the file
+  @blocks = $ct->select_blocks( -index => 1 );
+
+  ## select blocks 1, 5, 6, and 7
+  @blocks = $ct->select_blocks( -index => [1, 5, 6, 7] );
+
+=back
+
+B<select_blocks> returns B<Block> objects, which means that if you
+need to access data elements inside the blocks, you'll need to
+retrieve them using B<lines> or B<select> method first:
+
+  ## the first block in the crontab file is an environment variable
+  ## declaration: NAME=value
+  @blocks = $ct->select_blocks( -index => 1 );
+  print "This environment variable value is " . ($block[0]->lines)[0]->value . "\n";
 
 =head2 block($line)
 
@@ -975,9 +1257,11 @@ sub init {
 
     $self->lines([]);  ## initialize
     $self->strict(0);
+    $self->system(0);
 
     $self->lines($args{'-lines'})   if defined $args{'-lines'};
     $self->strict($args{'-strict'}) if defined $args{'-strict'};
+    $self->system($args{'-system'}) if defined $args{'-system'};
 
     my $rv = 1;
     if( defined $args{'-data'} ) {
@@ -1012,7 +1296,8 @@ sub data {
 
 	for my $line ( @lines ) {
 	    my $obj;
-	    if( $obj = new Config::Crontab::Event(-data => $line) ) {
+	    if( $obj = new Config::Crontab::Event(-data => $line, 
+						  -system => $self->system) ) {
 	    }
 
 	    elsif( $obj = new Config::Crontab::Env(-data => $line) ) {
@@ -1257,6 +1542,7 @@ of the following ways:
     $event = new Config::Crontab::Block( -data => <<_BLOCK_ );
     ## a comment
     5 19 * * Mon /bin/fhe --turn=dad
+    _BLOCK_
 
 =back
 
@@ -1488,28 +1774,33 @@ use Carp;
 use vars qw(@ISA);
 @ISA = qw(Config::Crontab::Base);
 
-use constant RE_DT       => '(?:\d+|\*)(?:[-,\/]\d+)*';
-use constant RE_DM       => '\w{3}(?:,\w{3})*';
-use constant RE_DTELEM   => '(?:\*|' . RE_DT . ')';
-use constant RE_DTMOY    => '(?:\*|' . RE_DT . '|' . RE_DM . ')';
-use constant RE_DTDOW    => RE_DTMOY;
-use constant RE_ACTIVE   => '^\s*(\#*)\s*';
-use constant RE_SPECIAL  => '(\@(?:reboot|midnight|(?:year|annual|month|week|dai|hour)ly))';
-use constant RE_DATETIME => '(' . RE_DTELEM . ')' .
-                         '\s+(' . RE_DTELEM . ')' .
-                         '\s+(' . RE_DTELEM . ')' .
-                         '\s+(' . RE_DTMOY  . ')' .
-                         '\s+(' . RE_DTDOW  . ')';
-use constant RE_COMMAND  => '\s+(.+?)\s*$';
-use constant SPECIAL     => RE_ACTIVE . RE_SPECIAL  . RE_COMMAND;
-use constant DATETIME    => RE_ACTIVE . RE_DATETIME . RE_COMMAND;
+use constant RE_DT        => '(?:\d+|\*)(?:[-,\/]\d+)*';
+use constant RE_DM        => '\w{3}(?:,\w{3})*';
+use constant RE_DTELEM    => '(?:\*|' . RE_DT . ')';
+use constant RE_DTMOY     => '(?:\*|' . RE_DT . '|' . RE_DM . ')';
+use constant RE_DTDOW     => RE_DTMOY;
+use constant RE_ACTIVE    => '^\s*(\#*)\s*';
+use constant RE_SPECIAL   => '(\@(?:reboot|midnight|(?:year|annual|month|week|dai|hour)ly))';
+use constant RE_DATETIME  => '(' . RE_DTELEM . ')' .
+                          '\s+(' . RE_DTELEM . ')' .
+                          '\s+(' . RE_DTELEM . ')' .
+                          '\s+(' . RE_DTMOY  . ')' .
+                          '\s+(' . RE_DTDOW  . ')';
+use constant RE_USER      => '\s+(\S+)';
+use constant RE_COMMAND   => '\s+(.+?)\s*$';
+use constant SPECIAL      => RE_ACTIVE . RE_SPECIAL  . RE_COMMAND;
+use constant DATETIME     => RE_ACTIVE . RE_DATETIME . RE_COMMAND;
+use constant SYS_SPECIAL  => RE_ACTIVE . RE_SPECIAL  . RE_USER . RE_COMMAND;
+use constant SYS_DATETIME => RE_ACTIVE . RE_DATETIME . RE_USER . RE_COMMAND;
 
 sub init {
     my $self = shift;
     my %args = @_;
+    my $rv = 1;
 
     ## set defaults
     $self->active(1);
+    $self->system(0);
 
     $self->special(undef);
     $self->minute('*');
@@ -1517,24 +1808,26 @@ sub init {
     $self->dom('*');
     $self->month('*');
     $self->dow('*');
+    $self->user('');
 
     ## get arguments and set new defaults
-    $self->minute($args{'-minute'})     if defined $args{'-minute'};
-    $self->hour($args{'-hour'})         if defined $args{'-hour'};
-    $self->dom($args{'-dom'})           if defined $args{'-dom'};
-    $self->month($args{'-month'})       if defined $args{'-month'};
-    $self->dow($args{'-dow'})           if defined $args{'-dow'};
+    $self->system($args{'-system'})     if defined $args{'-system'};  ## -system arg overrides implicits
+    unless( $args{'-data'} ) {
+	$self->minute($args{'-minute'})     if defined $args{'-minute'};
+	$self->hour($args{'-hour'})         if defined $args{'-hour'};
+	$self->dom($args{'-dom'})           if defined $args{'-dom'};
+	$self->month($args{'-month'})       if defined $args{'-month'};
+	$self->dow($args{'-dow'})           if defined $args{'-dow'};
 
-    $self->special($args{'-special'})   if defined $args{'-special'};
-    $self->data($args{'-data'})         if defined $args{'-data'};
-    $self->datetime($args{'-datetime'}) if defined $args{'-datetime'};
-    $self->command($args{'-command'})   if $args{'-command'};
-    $self->active($args{'-active'})     if defined $args{'-active'};
+	$self->user($args{'-user'})         if defined $args{'-user'};
+	$self->system(1)                    if defined $args{'-user'};
 
-    my $rv = 1;
-    if( defined $args{'-data'} ) {
-	$rv = $self->data($args{'-data'});
+	$self->special($args{'-special'})   if defined $args{'-special'};
+	$self->datetime($args{'-datetime'}) if defined $args{'-datetime'};
+	$self->command($args{'-command'})   if $args{'-command'};
+	$self->active($args{'-active'})     if defined $args{'-active'};
     }
+    $rv = $self->data($args{'-data'})   if defined $args{'-data'};
 
     return ( defined $rv ? 1 : undef );
 }
@@ -1550,24 +1843,52 @@ sub data {
 
 	my @matches = ();
 
-	## is a command
-	if( @matches = $data =~ SPECIAL or
-	    @matches = $data =~ DATETIME ) {
-	    my $active = shift @matches;
-	    $self->active(   ($active ? 0 : 1) );
-	    $self->command(  pop @matches );
-	    $self->datetime( \@matches );
+	## system (user) syntax
+	if( $self->system ) {
+	    if( @matches = $data =~ SYS_SPECIAL or
+		@matches = $data =~ SYS_DATETIME ) {
+		my $active = shift @matches;
+		$self->active( ($active ? 0 : 1) );
+		$self->command( pop @matches );
+		$self->user( pop @matches );
+		$self->datetime( \@matches );
+	    }
+
+	    ## not a good -data value
+	    else {
+		return;
+	    }
 	}
 
-	## not a good -data value
+	## non-system (regular user crontab style) syntax
 	else {
-	    return;
+	    ## is a command
+	    if( @matches = $data =~ SPECIAL or
+		@matches = $data =~ DATETIME ) {
+		my $active = shift @matches;
+		$self->active( ($active ? 0 : 1) );
+		$self->command( pop @matches );
+		$self->user('');
+		$self->datetime( \@matches );
+	    }
+
+	    ## not a good -data value
+	    else {
+		return;
+	    }
 	}
     }
 
-    return ( $self->command
-	     ? $self->datetime . ' ' 
-	     : '' ) . $self->command;
+    my $fmt = "%s";
+    $fmt .= ( $self->command
+	      ? ( $self->system 
+		  ? ($self->special ? "\t\t\t\t\t%s" : "\t%s") . ( $self->user ? "\t%s" : '' )
+		  : " %s" )
+	      : '' );
+
+    return sprintf($fmt, ( $self->command
+			   ? ( $self->datetime, ($self->system && $self->user ? $self->user : ()))
+			   : () ), $self->command )
 }
 
 sub datetime {
@@ -1641,8 +1962,21 @@ sub datetime {
 	return $self->special;
     }
 
-    return $self->minute . ' ' . $self->hour . ' ' . 
-      $self->dom . ' ' . $self->month . ' ' . $self->dow;
+    my $fmt = ( $self->system 
+		? "%s\t%s\t%s\t%s\t%s"
+		: "%s %s %s %s %s" );
+
+    return sprintf( $fmt, $self->minute, $self->hour, $self->dom, $self->month, $self->dow);
+}
+
+## this is duplicated in AUTOLOAD, but we need to set system also
+sub user {
+    my $self = shift;
+    if( @_ ) {  ## setting a value, set system too
+	$self->system($_[0] ? 1 : 0);
+	$self->{_user} = shift;
+    }
+    return ( defined $self->{_user} ? $self->{_user} : '' );
 }
 
 sub dump {
@@ -1675,6 +2009,8 @@ L<crontab(5)>):
 =item @daily  /bin/bar arg1 arg2
 
 =item #30 10 12 * *  /bin/commented out
+
+=item 5 4 * * *  joeuser  /bin/winkerbean
 
 =back
 
@@ -1717,6 +2053,15 @@ This special datetime field can also be called 'special':
     -------  -------------------------
     special          command
 
+As of version 1.05, B<Crontab> supports system crontabs, which adds
+an extra I<user> field:
+
+    5 3 * Apr Sun  chris  /bin/rejoice
+    -------------  -----  ------------
+      datetime     user     command
+
+This field is described in L<crontab(5)> on most systems.
+
 These and other methods for accessing and manipulating B<Event>
 objects are described in subsequent sections.
 
@@ -1746,6 +2091,18 @@ of the following ways:
                                          -hour    => 2,
                                          -command => '/bin/document my_proggie', );
 
+=item System Event
+
+    $event = new Config::Crontab::Event( -minute  => 5,
+                                         -hour    => 2,
+                                         -user    => 'joeuser',
+                                         -command => '/bin/foo --bar=blech', );
+
+=item System Event
+
+    $event = new Config::Crontab::Event( -data   => '30 3 * * 5,6 joeuser /bin/blech',
+                                         -system => 1, );
+
 =back
 
 Constructor attributes available in the B<new> method take the same
@@ -1771,6 +2128,10 @@ list of attributes available to the B<new> method:
 =item B<-data>
 
 =item B<-datetime>
+
+=item B<-user>
+
+=item B<-system>
 
 =item B<-command>
 
@@ -2027,6 +2388,41 @@ B<not> pass a standard field into the B<special> method. Currently,
 the object will not complain, and may even work in most cases, but the
 behavior is undefined and will likely become more strict in the
 future.
+
+=head2 user([string])
+
+Get or set the user part of a I<system> B<event> object.
+
+Example:
+
+    $event->user('joeuser');
+
+The B<user> field is only accessible when the crontab object was
+created or parsed with B<system> mode enabled (see L</"system">
+above).
+
+=head2 system([boolean])
+
+When set, will parse a B<-data> string looking for a username before
+the command as described in L<crontab(5)>.
+
+Example:
+
+    $event->system(1);
+    $event->data('0 2 * * * joeuser /bin/foo --args');
+
+This will set the user as 'joeuser' and the command as '/bin/foo
+--args'. Notice that if you pass bad data, the B<Event> parser really
+can't help since the I<user> (including '/E<lt>login-classE<gt>')
+syntax is now supported as of version 1.05:
+
+    $event = new Config::Crontab::Event( -data   => '2 5 * * * /bin/foo --args',
+                                         -system => 1 );
+
+The B<Event> object will have '/bin/foo' as its user and '--args' as
+its command. While things will usually work out when you write to
+file, you definitely won't get what you're expecting if you grok the
+I<command> field.
 
 =head2 command([string])
 
@@ -2634,7 +3030,7 @@ sub AUTOLOAD {
     }
 
     ## do magic
-  ADD_TO_SYMBOL_TABLE: {
+  SYMBOLS: {
 	no strict 'refs';
 	*$AUTOLOAD = $foni;
     }
@@ -2654,10 +3050,10 @@ __END__
 
 =item *
 
-This version of B<Config::Crontab> does not directly support the
-optional ":group" and "/<login-class>" suffixes described in
-L<crontab(5)>. It will treat them as part of the B<command> field and
-thus indirectly supports them.
+As of version 1.05, B<Config::Crontab> supports the user field (with
+optional ':group' and '/E<lt>login-classE<gt>') via the B<-system>
+initialization parameter, B<system> B<Event> method, or B<user>
+B<Event> method and B<Event> initialization parameter.
 
 =item *
 

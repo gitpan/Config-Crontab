@@ -1,4 +1,4 @@
-Config/Crontab version 1.03
+Config/Crontab version 1.10
 ===========================
 
 Config::Crontab reads and writes (and pretty-prints) your crontab(5)
@@ -56,6 +56,23 @@ The following example is equivalent to 'crontab -l':
     $ct = new Config::Crontab; $ct->read; print $ct->dump;
 
 Example 3:
+==========
+
+The following example is equivalent to 'crontab -u joe -l':
+
+    $ct = new Config::Crontab( -owner => 'joe' );
+    $ct->read;
+    print $ct->dump;
+
+You can even copy crontabs from one user to another:
+
+    ## must be run as root or other privileged user
+    $ct = new Config::Crontab( -owner => 'joe' );
+    $ct->read;
+    $ct->owner('sherman');
+    $ct->write;
+
+Example 4:
 ==========
 
 You may also make a backup of your crontab:
@@ -138,4 +155,4 @@ COPYRIGHT AND LICENCE
 This library is free software; you can redistribute it and/or modify
 it under the terms of the Perl Artistic License.
 
-Copyright (C) 2003 Scott Wiersdorf. All Rights Reserved.
+Copyright (C) 2003-2005 Scott Wiersdorf. All Rights Reserved.
