@@ -3,7 +3,7 @@
 ## 
 ## Scott Wiersdorf
 ## Created: Fri May  9 14:03:01 MDT 2003
-## $SMEId: local/perl/Config/Crontab/Crontab.pm,v 1.37 2005/06/10 22:14:50 scottw Exp $
+## $SMEId: local/perl/Config/Crontab/Crontab.pm,v 1.38 2005/12/09 23:34:33 scottw Exp $
 ## 
 ## Config::Crontab - a crontab(5) parser
 ## 
@@ -35,7 +35,7 @@ use vars qw( $VERSION @ISA );
 use Fcntl;
 use File::Temp qw(:POSIX);
 
-$VERSION = '1.10';
+$VERSION = '1.11';
 
 sub init {
     my $self = shift;
@@ -1753,6 +1753,31 @@ Example:
 
     $block->active(0);  ## deactivate this block
 
+=head2 flag(string)
+
+Flags a block or an object inside a block with the specified data. The
+data you specify is completely up to you. This can be handy if you
+need to operate on many objects at once and don't want to risk pulling
+the rug out from under some (i.e., deleting numbered elements from a
+list changes the numbering of subsequent objects in the list, which is
+probably not what you want).
+
+All normal query operations apply to B<-flag> attributes (e.g.,
+B<-flag_re>, B<-flag_nre>, etc).
+
+Example:
+
+    ## delete every other event in this block
+    my $count = 0;
+    for my $event ( $block->select( -type => 'event' ) ) {
+        $event->flag('deleteme!')
+          if $count % 2 == 0;
+        $count++;
+    }
+
+    ## delete all blocks marked as 'deleteme!'
+    $block->remove( $block->select( -flag => 'deleteme!' ) );
+
 =head2 dump
 
 Returns a formatted string of the B<Block> object (recursively calling
@@ -2989,6 +3014,7 @@ sub new {
     bless $self, $class;
 
     my $rv = $self->init(@_);
+    $self->flag('');
 
     return ( $rv ? $self : undef );
 }
@@ -3004,6 +3030,12 @@ sub init {
 sub dump {
     my $self = shift;
     return $self->data;  ## this will AUTOLOAD if not present
+}
+
+sub flag {
+    my $self = shift;
+    $self->{'_flag'} = shift if @_;
+    return $self->{'_flag'};
 }
 
 sub AUTOLOAD {

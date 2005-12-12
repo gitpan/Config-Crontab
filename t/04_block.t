@@ -1,6 +1,6 @@
 use Test;
 use blib;
-BEGIN { plan tests => 125 };
+BEGIN { plan tests => 126 };
 use Config::Crontab;
 ok(1);
 
@@ -457,3 +457,51 @@ $block = new Config::Crontab::Block( -system => 1,
 #6 * 0 0 Sat wonka /bin/saturday
 _DATA_
 ok( ($block->select(-type => 'event'))[0]->user, 'wonka' );
+
+##
+## remove many items using 'flag'
+##
+undef $block;
+$block = new Config::Crontab::Block;
+$block->system(1);
+$block->data( <<'_DATA_');
+1  5 * * *   bin    echo 1
+2  5 * * *   bin    echo 2
+3  5 * * *   bin    echo 3
+4  5 * * *   bin    echo 4
+5  5 * * *   bin    echo 5
+6  5 * * *   bin    echo 6
+7  5 * * *   bin    echo 7
+8  5 * * *   bin    echo 8
+9  5 * * *   bin    echo 9
+10 5 * * *   bin    echo 10
+11 5 * * *   bin    echo 11
+12 5 * * *   bin    echo 12
+13 5 * * *   bin    echo 13
+14 5 * * *   bin    echo 14
+15 5 * * *   bin    echo 15
+16 5 * * *   bin    echo 16
+17 5 * * *   bin    echo 17
+_DATA_
+
+## flag evens
+my $count = 0;
+for my $event ( $block->select( -type => 'event' ) ) {
+    $event->flag('delete')
+      if $count % 2 == 0;
+    $count++;
+}
+
+## delete them
+$block->remove( $block->select( -flag => 'delete' ) );
+
+ok( $block->dump, <<_BLOCK_ );
+2	5	*	*	*	bin	echo 2
+4	5	*	*	*	bin	echo 4
+6	5	*	*	*	bin	echo 6
+8	5	*	*	*	bin	echo 8
+10	5	*	*	*	bin	echo 10
+12	5	*	*	*	bin	echo 12
+14	5	*	*	*	bin	echo 14
+16	5	*	*	*	bin	echo 16
+_BLOCK_
