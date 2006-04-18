@@ -3,7 +3,7 @@ use strict;
 
 ## Scott Wiersdorf
 ## Created: Mon May 19 11:55:06 MDT 2003
-## $Id$
+## $Id: crontab.cgi,v 1.1 2006/04/18 21:38:22 scott Exp $
 
 ## a simple CGI for crontab editing
 ##
