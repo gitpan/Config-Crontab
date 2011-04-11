@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:                Config-Crontab
-version:             1.32
+version:             1.33
 abstract:            Read/Write Vixie compatible crontab(5) files
 license:             ~
 author:              
