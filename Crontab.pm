@@ -3,7 +3,7 @@
 ##
 ## Scott Wiersdorf
 ## Created: Fri May  9 14:03:01 MDT 2003
-## Updated: $Id: Crontab.pm,v 1.5 2011/04/11 22:29:11 scott Exp $
+## Updated: $Id: Crontab.pm,v 1.6 2011/04/11 22:39:19 scott Exp $
 ##
 ## Config::Crontab - a crontab(5) parser
 ##
@@ -39,7 +39,7 @@ our @ISA = qw(Config::Crontab::Base Config::Crontab::Container);
 use Fcntl;
 use File::Temp qw(:POSIX);
 
-our $VERSION = '1.31';
+our $VERSION = '1.32';
 
 sub init {
     my $self = shift;
