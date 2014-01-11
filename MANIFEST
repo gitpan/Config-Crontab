@@ -15,3 +15,4 @@ t/07_write.t
 t/08_crashme.t
 t/09_remove.t
 META.yml                                 Module meta-data (added by MakeMaker)
+META.json                                Module JSON meta-data (added by MakeMaker)

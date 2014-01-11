@@ -3,7 +3,7 @@
 ##
 ## Scott Wiersdorf
 ## Created: Fri May  9 14:03:01 MDT 2003
-## Updated: $Id: Crontab.pm,v 1.7 2011/04/11 22:55:03 scott Exp $
+## Updated: $Id: Crontab.pm,v 1.8 2014/01/09 04:50:04 scott Exp $
 ##
 ## Config::Crontab - a crontab(5) parser
 ##
@@ -39,7 +39,7 @@ our @ISA = qw(Config::Crontab::Base Config::Crontab::Container);
 use Fcntl;
 use File::Temp qw(:POSIX);
 
-our $VERSION = '1.33';
+our $VERSION = '1.40';
 
 sub init {
     my $self = shift;
@@ -1885,9 +1885,10 @@ use Carp;
 our @ISA = qw(Config::Crontab::Base);
 
 use constant RE_DT        => '(?:\d+|\*)(?:[-,\/]\d+)*';
+use constant RE_DTLIST    => RE_DT . '(?:,' . RE_DT . ')*';
 use constant RE_DM        => '\w{3}(?:,\w{3})*';
-use constant RE_DTELEM    => '(?:\*|' . RE_DT . ')';
-use constant RE_DTMOY     => '(?:\*|' . RE_DT . '|' . RE_DM . ')';
+use constant RE_DTELEM    => '(?:\*|' . RE_DTLIST . ')';
+use constant RE_DTMOY     => '(?:\*|' . RE_DTLIST . '|' . RE_DM . ')';
 use constant RE_DTDOW     => RE_DTMOY;
 use constant RE_ACTIVE    => '^\s*(\#*)\s*';
 use constant RE_NOLOG     => '(-?)';  ## SuSE-specific extension
